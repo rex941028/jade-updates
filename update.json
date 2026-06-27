@@ -1,11 +1,10 @@
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "date": "2026-06-28",
   "changelog": [
-    "修復 Gemini API 金鑰格式驗證：儲存時若格式不正確會立即提示",
-    "優化 API 金鑰設定說明：更清楚標示正確申請步驟與金鑰格式（AIza 開頭）",
-    "優化辨識失敗訊息：金鑰格式錯誤時給出明確的修正指引"
+    "修復 Gemini API 金鑰驗證問題：支援 Google 新版金鑰格式（AQ. 開頭）",
+    "更新 API 設定說明文字，移除舊格式限制"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統更新 v1.0.4】Gemini API 金鑰設定優化！\n\nGemini 金鑰格式為「AIza」開頭（約 39 字元），\n請至 aistudio.google.com 申請，不要使用 Google 帳號的 OAuth token。\n\n請點選「⚙ API 設定」重新確認並填入正確金鑰。"
+  "announcement": "【系統更新 v1.0.5】修復 Gemini API 金鑰無法輸入的問題！\n\nGoogle 已更新金鑰格式，請重新開啟「⚙ API 設定」，貼入從 aistudio.google.com 複製的金鑰即可正常使用。"
 }
