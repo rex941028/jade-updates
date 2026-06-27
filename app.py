@@ -21,7 +21,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -441,7 +441,7 @@ def _parse_ocr_json(text: str) -> dict:
 
 def _ocr_with_gemini(b64: str, mime: str, key: str) -> dict:
     import time as _time
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}'
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}'
     payload = {
         'contents': [{'parts': [
             {'inline_data': {'mime_type': mime, 'data': b64}},

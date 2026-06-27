@@ -1,10 +1,10 @@
 {
-  "version": "1.0.5",
+  "version": "1.0.6",
   "date": "2026-06-28",
   "changelog": [
-    "修復 Gemini API 金鑰驗證問題：支援 Google 新版金鑰格式（AQ. 開頭）",
-    "更新 API 設定說明文字，移除舊格式限制"
+    "修復圖片辨識失敗（錯誤 404）：更新 Gemini 模型至 gemini-2.0-flash",
+    "gemini-1.5-flash 已被 Google 從 v1beta 端點移除，改用新版模型"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統更新 v1.0.5】修復 Gemini API 金鑰無法輸入的問題！\n\nGoogle 已更新金鑰格式，請重新開啟「⚙ API 設定」，貼入從 aistudio.google.com 複製的金鑰即可正常使用。"
+  "announcement": "【系統更新 v1.0.6】修復圖片辨識 404 錯誤！\n\nGoogle 已停用舊版辨識模型，本次更新已切換至新版 gemini-2.0-flash，更新後即可正常辨識圖片。"
 }
