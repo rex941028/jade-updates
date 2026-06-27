@@ -26,7 +26,7 @@ APP_VERSION = "1.0.0"
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
 # 留空則停用自動更新。
-UPDATE_CHECK_URL = ""
+UPDATE_CHECK_URL = "https://raw.githubusercontent.com/rex941028/jade-updates/main/update.json"
 
 JADE       = '#2D6A4F'
 JADE_DARK  = '#1B4332'
