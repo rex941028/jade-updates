@@ -21,7 +21,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -383,15 +383,22 @@ def _save_settings(s: dict):
 
 
 def _get_api_auth():
-    """Return (header_name, header_value) or None if no credentials found.
-    Priority: ANTHROPIC_API_KEY env var → data/settings.json → Claude Code OAuth."""
+    """Return (api_type, credential) or None.
+    api_type: 'gemini' | 'anthropic' | 'anthropic-oauth'
+    Priority: Gemini (free) → Anthropic API key → Claude Code OAuth."""
+    gemini_key = os.environ.get('GEMINI_API_KEY', '').strip()
+    if not gemini_key:
+        gemini_key = _load_settings().get('gemini_api_key', '').strip()
+    if gemini_key:
+        return ('gemini', gemini_key)
+
     key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     if key:
-        return ('x-api-key', key)
+        return ('anthropic', key)
 
     key = _load_settings().get('anthropic_api_key', '').strip()
     if key:
-        return ('x-api-key', key)
+        return ('anthropic', key)
 
     creds_path = os.path.join(os.path.expanduser('~'), '.claude', '.credentials.json')
     if os.path.exists(creds_path):
@@ -400,71 +407,104 @@ def _get_api_auth():
                 creds = json.load(f)
             token = (creds.get('claudeAiOauth') or {}).get('accessToken', '')
             if token:
-                return ('Authorization', f'Bearer {token}')
+                return ('anthropic-oauth', token)
         except Exception:
             pass
 
     return None
 
 
-def _ocr_shipping_label(image_path: str) -> dict:
-    """Send a shipping-label image to Claude Haiku and extract order_id + real_name.
-    Returns {'order_id': str|None, 'real_name': str|None}.
-    Raises RuntimeError('AUTH_MISSING') when no credentials found.
-    Raises RuntimeError('AUTH_INVALID') on 401/403.
-    Raises RuntimeError(<message>) for other failures."""
-    auth = _get_api_auth()
-    if not auth:
-        raise RuntimeError('AUTH_MISSING')
-    auth_header, auth_value = auth
+_OCR_PROMPT = (
+    '這是一張蝦皮超商取件標籤。版面分上下兩區：\n\n'
+    '【上半區】含路線碼（如 X01-2-4）、日期、門市交寄、訂單編號、寄件編號、條碼。'
+    '右側小框內是「賣家」姓名，格式為中間有星號遮蔽（例如 林*蕙、林*薇）。\n\n'
+    '【下半區】含超商店名、QR code、圓框地區字（南/北/中/東/西等），'
+    '圓框右側是「收件人」完整真實姓名（2～4 個中文字，無星號）以及取件金額數字。\n\n'
+    '請辨識以下兩項：\n\n'
+    '1. 訂單編號：上半區明確標示「訂單編號:」後面的那串英數字（通常以日期數字開頭，'
+    '例如 2510130NBW55XV 或 251124JHPEEE6W）。\n'
+    '   注意：「寄件編號:」後的 TW 開頭字串是物流單號，不是訂單編號，請勿填入。\n\n'
+    '2. 收件人姓名：下半區圓框右側的完整中文姓名。\n'
+    '   注意：右上角小框裡含星號的名字（如 林*蕙）是賣家，絕對不可填入此欄。\n\n'
+    '只回傳一行 JSON，不含任何說明文字：\n'
+    '{"order_id": "...", "real_name": "..."}\n'
+    '若無法辨識某欄位，填 null。'
+)
 
-    with open(image_path, 'rb') as f:
-        raw = f.read()
-    b64 = base64.b64encode(raw).decode('ascii')
 
-    ext = os.path.splitext(image_path)[1].lower()
-    mime = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-            '.png': 'image/png', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
+def _parse_ocr_json(text: str) -> dict:
+    m = re.search(r'\{[^{}]+\}', text)
+    if not m:
+        raise RuntimeError(f'無法解析 API 回應：{text[:120]}')
+    return json.loads(m.group())
 
+
+def _ocr_with_gemini(b64: str, mime: str, key: str) -> dict:
+    import time as _time
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}'
+    payload = {
+        'contents': [{'parts': [
+            {'inline_data': {'mime_type': mime, 'data': b64}},
+            {'text': _OCR_PROMPT},
+        ]}],
+        'generationConfig': {'maxOutputTokens': 256, 'temperature': 0},
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'content-type': 'application/json'},
+        method='POST')
+    last_err = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = json.loads(resp.read().decode('utf-8'))
+            last_err = None
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 401, 403):
+                raise RuntimeError('AUTH_INVALID')
+            if e.code == 429 and attempt < 2:
+                _time.sleep(10)
+                continue
+            detail = e.read().decode('utf-8', errors='replace')[:300]
+            last_err = RuntimeError(f'Gemini API 錯誤 {e.code}：{detail}')
+        except TimeoutError:
+            last_err = RuntimeError('連線逾時（30 秒），請確認網路連線後重試。')
+    if last_err:
+        raise last_err
+    text = ((body.get('candidates') or [{}])[0]
+            .get('content', {}).get('parts', [{}])[0].get('text', '')).strip()
+    return _parse_ocr_json(text)
+
+
+def _ocr_with_anthropic(b64: str, mime: str, api_type: str, credential: str) -> dict:
+    import time as _time
+    if api_type == 'anthropic-oauth':
+        headers = {
+            'Authorization': f'Bearer {credential}',
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+        }
+    else:
+        headers = {
+            'x-api-key': credential,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+        }
     payload = {
         'model': 'claude-haiku-4-5-20251001',
         'max_tokens': 256,
-        'messages': [{
-            'role': 'user',
-            'content': [
-                {'type': 'image',
-                 'source': {'type': 'base64', 'media_type': mime, 'data': b64}},
-                {'type': 'text', 'text': (
-                    '這是一張蝦皮超商取件標籤。版面分上下兩區：\n\n'
-                    '【上半區】含路線碼（如 X01-2-4）、日期、門市交寄、訂單編號、寄件編號、條碼。'
-                    '右側小框內是「賣家」姓名，格式為中間有星號遮蔽（例如 林*蕙、林*薇）。\n\n'
-                    '【下半區】含超商店名、QR code、圓框地區字（南/北/中/東/西等），'
-                    '圓框右側是「收件人」完整真實姓名（2～4 個中文字，無星號）以及取件金額數字。\n\n'
-                    '請辨識以下兩項：\n\n'
-                    '1. 訂單編號：上半區明確標示「訂單編號:」後面的那串英數字（通常以日期數字開頭，'
-                    '例如 2510130NBW55XV 或 251124JHPEEE6W）。\n'
-                    '   注意：「寄件編號:」後的 TW 開頭字串是物流單號，不是訂單編號，請勿填入。\n\n'
-                    '2. 收件人姓名：下半區圓框右側的完整中文姓名。\n'
-                    '   注意：右上角小框裡含星號的名字（如 林*蕙）是賣家，絕對不可填入此欄。\n\n'
-                    '只回傳一行 JSON，不含任何說明文字：\n'
-                    '{"order_id": "...", "real_name": "..."}\n'
-                    '若無法辨識某欄位，填 null。'
-                )}
-            ]
-        }]
+        'messages': [{'role': 'user', 'content': [
+            {'type': 'image', 'source': {'type': 'base64', 'media_type': mime, 'data': b64}},
+            {'type': 'text', 'text': _OCR_PROMPT},
+        ]}],
     }
-
     req = urllib.request.Request(
         'https://api.anthropic.com/v1/messages',
         data=json.dumps(payload).encode('utf-8'),
-        headers={
-            auth_header: auth_value,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-        },
+        headers=headers,
         method='POST')
-
-    import time as _time
     last_err = None
     for attempt in range(3):
         try:
@@ -484,12 +524,30 @@ def _ocr_shipping_label(image_path: str) -> dict:
             last_err = RuntimeError('連線逾時（30 秒），請確認網路連線後重試。')
     if last_err:
         raise last_err
-
     text = (body.get('content') or [{}])[0].get('text', '').strip()
-    m = re.search(r'\{[^{}]+\}', text)
-    if not m:
-        raise RuntimeError(f'無法解析 API 回應：{text[:120]}')
-    return json.loads(m.group())
+    return _parse_ocr_json(text)
+
+
+def _ocr_shipping_label(image_path: str) -> dict:
+    """Extract order_id + real_name from a shipping label image.
+    Returns {'order_id': str|None, 'real_name': str|None}.
+    Raises RuntimeError('AUTH_MISSING') | RuntimeError('AUTH_INVALID') | RuntimeError(msg)."""
+    auth = _get_api_auth()
+    if not auth:
+        raise RuntimeError('AUTH_MISSING')
+    api_type, credential = auth
+
+    with open(image_path, 'rb') as f:
+        raw = f.read()
+    b64 = base64.b64encode(raw).decode('ascii')
+    ext = os.path.splitext(image_path)[1].lower()
+    mime = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+            '.png': 'image/png', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
+
+    if api_type == 'gemini':
+        return _ocr_with_gemini(b64, mime, credential)
+    else:
+        return _ocr_with_anthropic(b64, mime, api_type, credential)
 
 
 # ── Auto-update ───────────────────────────────────────────────────────────────
@@ -1976,71 +2034,97 @@ class App(tk.Tk):
         """Show API key setup dialog. Returns True if a key was saved."""
         dlg = tk.Toplevel(self)
         dlg.title('設定 API 金鑰')
-        dlg.geometry('500x310')
+        dlg.geometry('520x430')
         dlg.resizable(False, False)
         dlg.configure(bg=WHITE)
         dlg.grab_set()
         dlg.transient(self)
 
-        tk.Label(dlg, text='設定 Anthropic API 金鑰', bg=WHITE, fg=JADE,
-                 font=(FONT, 13, 'bold')).pack(pady=(20, 6), padx=24, anchor='w')
-        tk.Label(dlg, text=(
-            '圖片辨識功能需要 Anthropic API 金鑰。\n\n'
-            '申請方式：\n'
-            '  1. 前往 console.anthropic.com 登入或註冊\n'
-            '  2. 點選左側「API Keys」→「Create Key」\n'
-            '  3. 複製金鑰（格式：sk-ant-api... 開頭）\n\n'
-            '金鑰儲存在本機，下次啟動無需再輸入。'
-        ), bg=WHITE, fg=TEXT, font=(FONT, 10), justify='left').pack(padx=24, anchor='w')
+        settings = _load_settings()
 
-        ef = tk.Frame(dlg, bg=WHITE)
-        ef.pack(fill='x', padx=24, pady=(12, 4))
-        tk.Label(ef, text='API 金鑰：', bg=WHITE, font=(FONT, 10)).pack(side='left')
-        key_var = tk.StringVar()
+        tk.Label(dlg, text='設定圖片辨識 API 金鑰', bg=WHITE, fg=JADE,
+                 font=(FONT, 13, 'bold')).pack(pady=(18, 2), padx=24, anchor='w')
 
-        existing = _load_settings().get('anthropic_api_key', '')
-        if existing:
-            key_var.set(existing)
+        # ── Gemini（免費）區塊 ──
+        gem_frame = tk.LabelFrame(dlg, text='★ Google Gemini（免費推薦）',
+                                  bg=WHITE, fg='#2A6C28', font=(FONT, 10, 'bold'),
+                                  relief='groove', bd=2)
+        gem_frame.pack(fill='x', padx=20, pady=(8, 4))
 
-        entry = tk.Entry(ef, textvariable=key_var, font=(FONT, 10),
-                         width=36, show='*', relief='solid', bd=1)
-        entry.pack(side='left', padx=(6, 0))
+        tk.Label(gem_frame, text=(
+            '申請：aistudio.google.com → 左側「Get API key」→「建立 API 金鑰」\n'
+            '金鑰格式以 AIza 開頭。每天免費 1500 次，無需信用卡。'
+        ), bg=WHITE, fg=TEXT, font=(FONT, 9), justify='left').pack(padx=10, pady=(4, 2), anchor='w')
+
+        gef = tk.Frame(gem_frame, bg=WHITE)
+        gef.pack(fill='x', padx=10, pady=(0, 8))
+        tk.Label(gef, text='Gemini Key：', bg=WHITE, font=(FONT, 10), width=12, anchor='e').pack(side='left')
+        gem_var = tk.StringVar(value=settings.get('gemini_api_key', ''))
+        gem_entry = tk.Entry(gef, textvariable=gem_var, font=(FONT, 10),
+                             width=32, show='*', relief='solid', bd=1)
+        gem_entry.pack(side='left', padx=(4, 4))
+        def do_clear_gem():
+            if messagebox.askyesno('確認清除', '確定要清除 Gemini 金鑰嗎？', parent=dlg):
+                s = _load_settings(); s.pop('gemini_api_key', None); _save_settings(s)
+                gem_var.set('')
+        tk.Button(gef, text='清除', font=(FONT, 9), bg='#EEEEEE', relief='flat',
+                  command=do_clear_gem).pack(side='left')
+
+        # ── Anthropic（付費）區塊 ──
+        ant_frame = tk.LabelFrame(dlg, text='Anthropic（付費備選）',
+                                  bg=WHITE, fg=GRAY, font=(FONT, 10),
+                                  relief='groove', bd=2)
+        ant_frame.pack(fill='x', padx=20, pady=(4, 4))
+
+        tk.Label(ant_frame, text=(
+            '申請：console.anthropic.com → 左側「API Keys」→「Create Key」\n'
+            '金鑰格式以 sk-ant- 開頭。需付費，若已設定 Gemini 則不需要。'
+        ), bg=WHITE, fg=GRAY, font=(FONT, 9), justify='left').pack(padx=10, pady=(4, 2), anchor='w')
+
+        anf = tk.Frame(ant_frame, bg=WHITE)
+        anf.pack(fill='x', padx=10, pady=(0, 8))
+        tk.Label(anf, text='Anthropic Key：', bg=WHITE, font=(FONT, 10), width=12, anchor='e').pack(side='left')
+        ant_var = tk.StringVar(value=settings.get('anthropic_api_key', ''))
+        ant_entry = tk.Entry(anf, textvariable=ant_var, font=(FONT, 10),
+                             width=32, show='*', relief='solid', bd=1)
+        ant_entry.pack(side='left', padx=(4, 4))
+        def do_clear_ant():
+            if messagebox.askyesno('確認清除', '確定要清除 Anthropic 金鑰嗎？', parent=dlg):
+                s = _load_settings(); s.pop('anthropic_api_key', None); _save_settings(s)
+                ant_var.set('')
+        tk.Button(anf, text='清除', font=(FONT, 9), bg='#EEEEEE', relief='flat',
+                  command=do_clear_ant).pack(side='left')
+
+        tk.Label(dlg, text='若同時填入兩組金鑰，優先使用 Gemini（免費）。',
+                 bg=WHITE, fg=GRAY, font=(FONT, 9)).pack(pady=(2, 4))
 
         saved = [False]
 
         def do_save():
-            key = key_var.get().strip()
-            if not key:
-                messagebox.showwarning('請輸入金鑰', '金鑰不可為空白。', parent=dlg)
+            gk = gem_var.get().strip()
+            ak = ant_var.get().strip()
+            if not gk and not ak:
+                messagebox.showwarning('請輸入金鑰', '至少需要填入一組 API 金鑰。', parent=dlg)
                 return
-            if not key.startswith('sk-ant-'):
-                ok = messagebox.askyesno(
-                    '格式確認',
-                    f'金鑰格式看起來不標準（應以 sk-ant- 開頭）。\n確定要儲存嗎？',
-                    parent=dlg)
-                if not ok:
-                    return
             s = _load_settings()
-            s['anthropic_api_key'] = key
+            if gk:
+                s['gemini_api_key'] = gk
+            else:
+                s.pop('gemini_api_key', None)
+            if ak:
+                s['anthropic_api_key'] = ak
+            else:
+                s.pop('anthropic_api_key', None)
             _save_settings(s)
             saved[0] = True
             dlg.destroy()
 
-        def do_clear():
-            if messagebox.askyesno('確認清除', '確定要清除已儲存的 API 金鑰嗎？', parent=dlg):
-                s = _load_settings()
-                s.pop('anthropic_api_key', None)
-                _save_settings(s)
-                dlg.destroy()
-
         bf = tk.Frame(dlg, bg=WHITE)
-        bf.pack(pady=(10, 0))
-        self._btn(bf, '儲存', JADE, do_save).pack(side='left', padx=6)
-        self._btn(bf, '清除金鑰', GRAY, do_clear).pack(side='left', padx=6)
-        self._btn(bf, '取消', '#888888', dlg.destroy).pack(side='left', padx=6)
+        bf.pack(pady=(4, 0))
+        self._btn(bf, '儲存', JADE, do_save).pack(side='left', padx=8)
+        self._btn(bf, '取消', '#888888', dlg.destroy).pack(side='left', padx=8)
 
-        entry.focus()
-        entry.icursor('end')
+        gem_entry.focus()
         dlg.wait_window()
         return saved[0]
 

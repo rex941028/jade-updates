@@ -1,15 +1,11 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "date": "2026-06-27",
   "changelog": [
-    "新增圖片 AI 辨識功能：自動辨識出貨標籤上的訂單編號與收件人姓名",
-    "修復圖片辨識誤讀賣家框姓名的問題",
-    "新增辨識進度視窗，可即時看到辨識狀態",
-    "新增辨識結果確認表格，支援直接修改後再寫入",
-    "新增 API 金鑰設定按鈕（工具列 ⚙ API 設定）",
-    "新增自動更新功能：啟動時自動偵測新版本",
-    "修復訂單詳情滾輪無法使用的問題"
+    "新增 Google Gemini 免費 API 支援：每天 1500 次免費辨識，無需信用卡",
+    "API 設定介面更新：同時顯示 Gemini（免費）與 Anthropic（付費）兩個選項",
+    "修復 Anthropic API 付費問題：改以 Gemini 免費版為預設"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統公告】您好，這是一則測試公告，確認系統更新通知功能正常運作。"
+  "announcement": "【系統更新 v1.0.2】圖片辨識功能現已支援 Google Gemini 免費 API！\n\n請點選工具列「⚙ API 設定」，填入 Gemini 金鑰即可免費使用。\n申請網址：aistudio.google.com（登入 Google 帳號 → Get API key → 建立金鑰）"
 }
