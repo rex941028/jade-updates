@@ -21,7 +21,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -1912,33 +1912,44 @@ class App(tk.Tk):
                      end_date=self.end_date_var.get().strip() or None)
 
     def _import_excel(self):
-        path = filedialog.askopenfilename(
-            title='選擇蝦皮訂單報表',
+        paths = filedialog.askopenfilenames(
+            title='選擇蝦皮訂單報表（可多選）',
             filetypes=[('Excel 檔案', '*.xlsx *.xls'), ('所有檔案', '*.*')],
             parent=self)
-        if not path:
+        if not paths:
             return
 
-        self.status_var.set('讀取 Excel...')
+        total = len(paths)
+        self.status_var.set(f'讀取 {total} 個檔案中...')
         self.update()
-        try:
-            order_map, price_acc, filename = _parse_excel(path)
-        except Exception as e:
-            messagebox.showerror('讀取失敗', f'無法讀取檔案：\n{e}\n\n'
-                                 '請確認 Excel 檔案已在 Excel 中關閉，再重試。', parent=self)
-            self.status_var.set('匯入失敗')
-            return
 
-        dups = _find_dup_orders(order_map)
+        # Phase 1: parse all files
+        parsed = []
+        for path in paths:
+            try:
+                order_map, price_acc, filename = _parse_excel(path)
+                dups = _find_dup_orders(order_map)
+                parsed.append((order_map, price_acc, filename, dups))
+            except Exception as e:
+                messagebox.showerror(
+                    '讀取失敗',
+                    f'無法讀取檔案：\n{os.path.basename(path)}\n\n{e}\n\n'
+                    '請確認檔案已在 Excel 中關閉，再重試。',
+                    parent=self)
+                self.status_var.set('匯入失敗')
+                return
+
+        # Phase 2: check duplicates globally, ask once
+        all_dups = [oid for _, _, _, dups in parsed for oid in dups]
         skip_existing = False
-        if dups:
-            n      = len(dups)
-            sample = '\n'.join(f'  • {oid}' for oid in dups[:15])
+        if all_dups:
+            n      = len(all_dups)
+            sample = '\n'.join(f'  • {oid}' for oid in all_dups[:15])
             if n > 15:
                 sample += f'\n  （還有 {n - 15} 筆…）'
             answer = messagebox.askyesno(
                 '發現重複訂單',
-                f'以下 {n} 筆訂單已存在於系統中：\n\n{sample}\n\n'
+                f'在 {total} 個檔案中共發現 {n} 筆重複訂單：\n\n{sample}\n\n'
                 f'是否覆蓋更新這些訂單的資料？\n\n'
                 f'【注意】系統會自動比對訂單完成時間，\n'
                 f'若系統內已有較新的資料，該筆訂單會自動跳過，\n'
@@ -1947,21 +1958,112 @@ class App(tk.Tk):
                 parent=self)
             skip_existing = not answer
 
-        self.status_var.set('匯入中，請稍候...')
-        self.update()
-        try:
-            nc, no, uo = _write_to_db(order_map, price_acc, filename, skip_existing)
-            _scan_line_from_notes()
-            self._refresh_list()
-            skipped = len(dups) if skip_existing else 0
-            msg = f'匯入成功！\n\n新增客戶：{nc} 位\n新增訂單：{no} 筆\n更新訂單：{uo} 筆'
-            if skipped:
-                msg += f'\n略過重複：{skipped} 筆'
-            messagebox.showinfo('匯入完成', msg, parent=self)
-            self.status_var.set(f'匯入完成：+{nc} 位客戶，+{no} 筆新訂單，更新 {uo} 筆')
-        except Exception as e:
-            messagebox.showerror('匯入失敗', f'發生錯誤：\n{e}', parent=self)
-            self.status_var.set('匯入失敗')
+        # Phase 3: show progress dialog and import
+        prog = self._make_excel_progress(total)
+        total_nc = total_no = total_uo = total_sk = 0
+        errors = []
+
+        for i, (order_map, price_acc, filename, dups) in enumerate(parsed):
+            prog.advance(i, filename)
+            try:
+                nc, no, uo = _write_to_db(order_map, price_acc, filename, skip_existing)
+                sk = len(dups) if skip_existing else 0
+                total_nc += nc; total_no += no; total_uo += uo; total_sk += sk
+                prog.mark_done(filename, True, nc, no, uo, sk)
+            except Exception as e:
+                errors.append((filename, str(e)))
+                prog.mark_done(filename, False, 0, 0, 0, 0)
+
+        prog.close()
+        _scan_line_from_notes()
+        self._refresh_list()
+
+        if errors:
+            err_text = '\n'.join(f'  • {fn}：{msg}' for fn, msg in errors)
+            messagebox.showwarning(
+                '部分失敗',
+                f'以下 {len(errors)} 個檔案寫入失敗：\n\n{err_text}',
+                parent=self)
+
+        msg = (f'匯入完成！共處理 {total} 個檔案。\n\n'
+               f'新增客戶：{total_nc} 位\n新增訂單：{total_no} 筆\n更新訂單：{total_uo} 筆')
+        if total_sk:
+            msg += f'\n略過重複：{total_sk} 筆'
+        if errors:
+            msg += f'\n失敗檔案：{len(errors)} 個'
+        messagebox.showinfo('匯入完成', msg, parent=self)
+        self.status_var.set(
+            f'匯入完成：+{total_nc} 位客戶，+{total_no} 筆新訂單，更新 {total_uo} 筆')
+
+    def _make_excel_progress(self, total: int):
+        """Progress dialog for Excel batch import."""
+        dlg = tk.Toplevel(self)
+        dlg.title('匯入報表中...')
+        dlg.geometry('480x230')
+        dlg.resizable(False, False)
+        dlg.configure(bg=WHITE)
+        dlg.transient(self)
+        dlg.protocol('WM_DELETE_WINDOW', lambda: None)
+
+        tk.Label(dlg, text='匯入報表中，請稍候…', bg=WHITE, fg=JADE,
+                 font=(FONT, 12, 'bold')).pack(pady=(18, 6), padx=20, anchor='w')
+
+        file_lbl = tk.Label(dlg, text='準備中…', bg=WHITE, fg=TEXT,
+                            font=(FONT, 9), anchor='w', wraplength=440)
+        file_lbl.pack(padx=20, anchor='w')
+
+        bar_frame = tk.Frame(dlg, bg=WHITE)
+        bar_frame.pack(fill='x', padx=20, pady=(10, 4))
+        bar = ttk.Progressbar(bar_frame, length=440, mode='determinate', maximum=total)
+        bar.pack(fill='x')
+
+        bottom = tk.Frame(dlg, bg=WHITE)
+        bottom.pack(fill='x', padx=20)
+        count_lbl = tk.Label(bottom, text=f'0 / {total} 個', bg=WHITE, fg=GRAY, font=(FONT, 9))
+        count_lbl.pack(side='left')
+        status_lbl = tk.Label(bottom, text='', bg=WHITE, font=(FONT, 9))
+        status_lbl.pack(side='right')
+
+        log_frame = tk.Frame(dlg, bg=WHITE)
+        log_frame.pack(fill='x', padx=20, pady=(6, 0))
+        log_lbl = tk.Label(log_frame, text='', bg=WHITE, fg=GRAY,
+                           font=(FONT, 8), anchor='w', wraplength=440, justify='left')
+        log_lbl.pack(anchor='w')
+
+        dlg.update()
+        log_lines = []
+
+        class _Handle:
+            def advance(self_, idx, fname):
+                file_lbl.config(text=f'正在處理：{fname}')
+                bar['value'] = idx
+                count_lbl.config(text=f'{idx} / {total} 個')
+                status_lbl.config(text='處理中…', fg='#B07000')
+                dlg.update()
+
+            def mark_done(self_, fname, ok: bool, nc, no, uo, sk):
+                bar['value'] = bar['value'] + 1
+                count_lbl.config(text=f'{int(bar["value"])} / {total} 個')
+                if ok:
+                    detail = f'+{nc}客戶 +{no}訂單 更新{uo}'
+                    if sk:
+                        detail += f' 略過{sk}'
+                    log_lines.append(('✓', fname, detail, JADE))
+                    status_lbl.config(text='完成', fg=JADE)
+                else:
+                    log_lines.append(('✕', fname, '寫入失敗', RED))
+                    status_lbl.config(text='失敗', fg=RED)
+                shown = log_lines[-3:]
+                log_lbl.config(
+                    text='\n'.join(f'{ic} {fn}  {det}' for ic, fn, det, _ in shown),
+                    fg=shown[-1][3])
+                dlg.update()
+
+            def close(self_):
+                if dlg.winfo_exists():
+                    dlg.destroy()
+
+        return _Handle()
 
     def _make_ocr_progress(self, total: int):
         """Create a non-blocking progress dialog for OCR. Returns a handle with

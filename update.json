@@ -1,11 +1,11 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "date": "2026-06-27",
   "changelog": [
-    "新增 Google Gemini 免費 API 支援：每天 1500 次免費辨識，無需信用卡",
-    "API 設定介面更新：同時顯示 Gemini（免費）與 Anthropic（付費）兩個選項",
-    "修復 Anthropic API 付費問題：改以 Gemini 免費版為預設"
+    "匯入報表支援一次選取多個 Excel 檔案",
+    "新增批次匯入進度視窗，即時顯示每個檔案的匯入狀態",
+    "重複訂單僅詢問一次，套用至所有選取的檔案"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統更新 v1.0.2】圖片辨識功能現已支援 Google Gemini 免費 API！\n\n請點選工具列「⚙ API 設定」，填入 Gemini 金鑰即可免費使用。\n申請網址：aistudio.google.com（登入 Google 帳號 → Get API key → 建立金鑰）"
+  "announcement": "【系統更新 v1.0.3】匯入報表現已支援多檔批次匯入！\n\n點選「↑ 匯入報表」後可同時選取多個 Excel 檔案一次匯入，並有進度視窗即時顯示狀態。"
 }
