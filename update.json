@@ -1,10 +1,11 @@
 {
-  "version": "1.0.6",
+  "version": "1.0.7",
   "date": "2026-06-28",
+  "gemini_model": "gemini-2.0-flash",
   "changelog": [
-    "修復圖片辨識失敗（錯誤 404）：更新 Gemini 模型至 gemini-2.0-flash",
-    "gemini-1.5-flash 已被 Google 從 v1beta 端點移除，改用新版模型"
+    "修復圖片辨識 404 錯誤：切換至 gemini-2.0-flash 模型",
+    "新增遠端模型設定：Google 未來更換模型時，不需重新安裝程式，系統啟動時自動同步"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統更新 v1.0.6】修復圖片辨識 404 錯誤！\n\nGoogle 已停用舊版辨識模型，本次更新已切換至新版 gemini-2.0-flash，更新後即可正常辨識圖片。"
+  "announcement": "【系統更新 v1.0.7】修復圖片辨識失敗問題！\n\n請重新開啟程式套用更新，之後即可正常辨識圖片。"
 }
