@@ -21,7 +21,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -470,9 +470,14 @@ def _ocr_with_gemini(b64: str, mime: str, key: str) -> dict:
                 raise RuntimeError('AUTH_INVALID_FORMAT')
             if e.code in (401, 403):
                 raise RuntimeError('AUTH_INVALID')
-            if e.code == 429 and attempt < 2:
-                _time.sleep(10)
-                continue
+            if e.code == 429:
+                raw = e.read().decode('utf-8', errors='replace')
+                if 'quota' in raw.lower():
+                    raise RuntimeError('QUOTA_EXCEEDED')
+                if attempt < 2:
+                    _time.sleep(15 * (attempt + 1))
+                    continue
+                raise RuntimeError('RATE_LIMITED')
             detail = e.read().decode('utf-8', errors='replace')[:300]
             last_err = RuntimeError(f'Gemini API 錯誤 {e.code}：{detail}')
         except TimeoutError:
@@ -2288,6 +2293,25 @@ class App(tk.Tk):
                 ocr = _ocr_shipping_label(path)
             except RuntimeError as e:
                 msg = str(e)
+                if msg == 'QUOTA_EXCEEDED':
+                    prog.close()
+                    messagebox.showwarning(
+                        'Gemini 免費額度已用完',
+                        'Google Gemini 今日免費辨識額度已耗盡。\n\n'
+                        '免費版每天約 500 次，額度於每日台灣時間早上 8:00 重置。\n\n'
+                        '請明天再試，或至 aistudio.google.com 查看用量。',
+                        parent=self)
+                    self.status_var.set('今日 Gemini 額度已用完')
+                    return
+                if msg == 'RATE_LIMITED':
+                    prog.close()
+                    messagebox.showwarning(
+                        '請求太頻繁',
+                        '短時間內送出太多辨識請求（超過每分鐘 15 次上限）。\n\n'
+                        '請等待約 1 分鐘後再重試。',
+                        parent=self)
+                    self.status_var.set('請稍後再試')
+                    return
                 if msg in ('AUTH_MISSING', 'AUTH_INVALID', 'AUTH_INVALID_FORMAT'):
                     prog.close()
                     if msg == 'AUTH_INVALID_FORMAT':
@@ -2327,6 +2351,11 @@ class App(tk.Tk):
                 errors.append((fname, str(e)))
                 prog.mark_done(fname, ok=False)
                 continue
+
+            # Small delay between images to respect Gemini's 15 RPM rate limit
+            if i < total - 1:
+                import time as _time
+                _time.sleep(4)
 
             order_id  = (ocr.get('order_id')  or '').strip()
             real_name = (ocr.get('real_name') or '').strip()
