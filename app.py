@@ -21,7 +21,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -462,7 +462,9 @@ def _ocr_with_gemini(b64: str, mime: str, key: str) -> dict:
             last_err = None
             break
         except urllib.error.HTTPError as e:
-            if e.code in (400, 401, 403):
+            if e.code == 400:
+                raise RuntimeError('AUTH_INVALID_FORMAT')
+            if e.code in (401, 403):
                 raise RuntimeError('AUTH_INVALID')
             if e.code == 429 and attempt < 2:
                 _time.sleep(10)
@@ -2154,8 +2156,9 @@ class App(tk.Tk):
         gem_frame.pack(fill='x', padx=20, pady=(8, 4))
 
         tk.Label(gem_frame, text=(
-            '申請：aistudio.google.com → 左側「Get API key」→「建立 API 金鑰」\n'
-            '金鑰格式以 AIza 開頭。每天免費 1500 次，無需信用卡。'
+            '申請：aistudio.google.com → 登入 Google → 左側「Get API key」→「建立 API 金鑰」\n'
+            '金鑰格式：以「AIza」開頭，約 39 字元。每天免費 1500 次，無需信用卡。\n'
+            '注意：不要填入 Google 帳號密碼或 OAuth token（格式不同，無法使用）。'
         ), bg=WHITE, fg=TEXT, font=(FONT, 9), justify='left').pack(padx=10, pady=(4, 2), anchor='w')
 
         gef = tk.Frame(gem_frame, bg=WHITE)
@@ -2208,6 +2211,27 @@ class App(tk.Tk):
             if not gk and not ak:
                 messagebox.showwarning('請輸入金鑰', '至少需要填入一組 API 金鑰。', parent=dlg)
                 return
+            if gk and not gk.startswith('AIza'):
+                ok = messagebox.askyesno(
+                    'Gemini 金鑰格式錯誤',
+                    'Gemini API 金鑰格式不正確！\n\n'
+                    '正確格式：以「AIza」開頭，約 39 個字元。\n\n'
+                    '請至 aistudio.google.com 重新申請：\n'
+                    '  登入 Google 帳號 → 左側「Get API key」\n'
+                    '  → 「建立 API 金鑰」→ 複製金鑰\n\n'
+                    '（注意：不要複製 OAuth token，那是另一種格式）\n\n'
+                    '確定要強制儲存這個格式不正確的金鑰嗎？',
+                    parent=dlg)
+                if not ok:
+                    gem_entry.focus()
+                    return
+            if ak and not ak.startswith('sk-ant-'):
+                ok = messagebox.askyesno(
+                    '格式確認',
+                    'Anthropic 金鑰格式看起來不標準（應以 sk-ant- 開頭）。\n確定要儲存嗎？',
+                    parent=dlg)
+                if not ok:
+                    return
             s = _load_settings()
             if gk:
                 s['gemini_api_key'] = gk
@@ -2264,12 +2288,23 @@ class App(tk.Tk):
                 ocr = _ocr_shipping_label(path)
             except RuntimeError as e:
                 msg = str(e)
-                if msg in ('AUTH_MISSING', 'AUTH_INVALID'):
+                if msg in ('AUTH_MISSING', 'AUTH_INVALID', 'AUTH_INVALID_FORMAT'):
                     prog.close()
-                    label = '金鑰無效或已過期' if msg == 'AUTH_INVALID' else '未設定金鑰'
+                    if msg == 'AUTH_INVALID_FORMAT':
+                        label = '金鑰格式錯誤'
+                        detail = (f'圖片「{fname}」辨識失敗：Gemini 金鑰格式不正確。\n\n'
+                                  f'正確的 Gemini API 金鑰應以「AIza」開頭（約 39 字元），\n'
+                                  f'請至 aistudio.google.com 重新申請後再輸入。\n\n'
+                                  f'是否立即重新設定？')
+                    elif msg == 'AUTH_INVALID':
+                        label = '金鑰無效或已過期'
+                        detail = f'圖片「{fname}」辨識失敗：{label}。\n\n是否立即設定 API 金鑰並重試？'
+                    else:
+                        label = '未設定金鑰'
+                        detail = f'圖片「{fname}」辨識失敗：{label}。\n\n是否立即設定 API 金鑰並重試？'
                     retry = messagebox.askyesno(
                         f'API 金鑰問題（{label}）',
-                        f'圖片「{fname}」辨識失敗：{label}。\n\n是否立即設定 API 金鑰並重試？',
+                        detail,
                         parent=self)
                     if retry and self._show_api_key_dialog():
                         prog = self._make_ocr_progress(total)

@@ -1,11 +1,11 @@
 {
-  "version": "1.0.3",
-  "date": "2026-06-27",
+  "version": "1.0.4",
+  "date": "2026-06-28",
   "changelog": [
-    "匯入報表支援一次選取多個 Excel 檔案",
-    "新增批次匯入進度視窗，即時顯示每個檔案的匯入狀態",
-    "重複訂單僅詢問一次，套用至所有選取的檔案"
+    "修復 Gemini API 金鑰格式驗證：儲存時若格式不正確會立即提示",
+    "優化 API 金鑰設定說明：更清楚標示正確申請步驟與金鑰格式（AIza 開頭）",
+    "優化辨識失敗訊息：金鑰格式錯誤時給出明確的修正指引"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統更新 v1.0.3】匯入報表現已支援多檔批次匯入！\n\n點選「↑ 匯入報表」後可同時選取多個 Excel 檔案一次匯入，並有進度視窗即時顯示狀態。"
+  "announcement": "【系統更新 v1.0.4】Gemini API 金鑰設定優化！\n\nGemini 金鑰格式為「AIza」開頭（約 39 字元），\n請至 aistudio.google.com 申請，不要使用 Google 帳號的 OAuth token。\n\n請點選「⚙ API 設定」重新確認並填入正確金鑰。"
 }
