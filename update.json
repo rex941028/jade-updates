@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "date": "2026-06-27",
+  "changelog": [
+    "初始版本發布",
+    "支援蝦皮訂單報表匯入",
+    "支援出貨標籤圖片 AI 辨識姓名",
+    "支援 LINE 帳號自動擷取",
+    "新增客戶刪除與 10 秒復原功能"
+  ],
+  "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
+  "announcement": ""
+}
