@@ -21,7 +21,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -439,7 +439,7 @@ def _parse_ocr_json(text: str) -> dict:
     return json.loads(m.group())
 
 
-_GEMINI_FALLBACK_MODEL = 'gemini-2.0-flash'
+_GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite'
 
 
 def _ocr_with_gemini(b64: str, mime: str, key: str) -> dict:

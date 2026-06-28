@@ -1,12 +1,11 @@
 {
-  "version": "1.0.8",
+  "version": "1.0.9",
   "date": "2026-06-28",
-  "gemini_model": "gemini-2.0-flash",
+  "gemini_model": "gemini-2.5-flash-lite",
   "changelog": [
-    "優化 Gemini 配額超限處理：偵測到今日額度耗盡時立即停止並顯示清楚說明",
-    "優化速率限制處理：偵測到請求過頻時顯示等待提示，不再重試",
-    "新增每張圖片之間 4 秒間隔，避免觸發每分鐘 15 次的速率上限"
+    "修復圖片辨識持續 429 錯誤：切換至 gemini-2.5-flash-lite 模型",
+    "gemini-2.0-flash 對新格式 API 金鑰（AQ. 開頭）的免費額度為 0，改用 gemini-2.5-flash-lite"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統更新 v1.0.8】優化圖片辨識穩定性！\n\n已加入自動間隔控制，避免觸發 Google 速率限制。若出現「今日額度已用完」，等到隔天早上 8 點後重試即可。"
+  "announcement": "【系統更新 v1.0.9】修復圖片辨識 429 錯誤！\n\n已切換至 gemini-2.5-flash-lite 模型，更新後即可正常辨識圖片，請重新開啟程式套用更新。"
 }
