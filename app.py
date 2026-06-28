@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -684,13 +684,20 @@ def _start_update_check(root):
         if not info:
             return
 
-        # Sync remote model config into local settings so model can be
-        # updated without re-deploying the app.
+        # Sync remote config into local settings so it can be updated
+        # without re-deploying the app.
         gemini_model = (info.get('gemini_model') or '').strip()
-        if gemini_model:
+        gemini_limit = info.get('gemini_daily_limit')
+        if gemini_model or gemini_limit is not None:
             s = _load_settings()
-            if s.get('gemini_model') != gemini_model:
+            changed = False
+            if gemini_model and s.get('gemini_model') != gemini_model:
                 s['gemini_model'] = gemini_model
+                changed = True
+            if gemini_limit is not None and s.get('gemini_daily_limit') != gemini_limit:
+                s['gemini_daily_limit'] = int(gemini_limit)
+                changed = True
+            if changed:
                 _save_settings(s)
 
         announcement = (info.get('announcement') or '').strip()

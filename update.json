@@ -1,6 +1,7 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "date": "2026-06-28",
+  "note": "v1.1.1 fixes gemini_daily_limit not syncing to settings",
   "gemini_model": "gemini-2.5-flash-lite",
   "gemini_daily_limit": 1500,
   "changelog": [
