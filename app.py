@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -1180,8 +1180,10 @@ class App(tk.Tk):
         hdr.pack_propagate(False)
         tk.Label(hdr, text='  瑾琰上品', bg=JADE, fg=WHITE,
                  font=(FONT, 16, 'bold')).pack(side='left', padx=4)
-        tk.Label(hdr, text=f'v{APP_VERSION}', bg=JADE, fg='#8EC4A8',
-                 font=(FONT, 8)).pack(side='left', padx=(0, 8), pady=(14, 0))
+        ver_lbl = tk.Label(hdr, text=f'v{APP_VERSION}', bg=JADE, fg='#8EC4A8',
+                           font=(FONT, 8), cursor='hand2')
+        ver_lbl.pack(side='left', padx=(0, 8), pady=(14, 0))
+        ver_lbl.bind('<Button-1>', lambda _: self._manual_check_update())
         # Right-to-left: rev, sales, refund, all, cust
         for attr in ('lbl_rev', 'lbl_sales', 'lbl_refund', 'lbl_all', 'lbl_cust'):
             lbl = tk.Label(hdr, text='', bg=JADE, fg='#B7E4C7', font=(FONT, 10))
@@ -2290,6 +2292,24 @@ class App(tk.Tk):
         gem_entry.focus()
         dlg.wait_window()
         return saved[0]
+
+    def _manual_check_update(self):
+        self.status_var.set('檢查更新中...')
+        self.update()
+        def worker():
+            info = _fetch_update_info()
+            def on_result():
+                if not info:
+                    self.status_var.set('檢查更新失敗，請確認網路連線')
+                    return
+                new_ver = (info.get('version') or '').strip()
+                if new_ver and _ver_tuple(new_ver) > _ver_tuple(APP_VERSION):
+                    self.status_var.set(f'發現新版本 {new_ver}')
+                    _on_update_available(self, info)
+                else:
+                    self.status_var.set(f'已是最新版本 v{APP_VERSION}')
+            self.after(0, on_result)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _update_quota_lbl(self):
         count = _get_ocr_today_count()
