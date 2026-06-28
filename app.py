@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -495,9 +495,12 @@ def _ocr_with_gemini(b64: str, mime: str, key: str) -> dict:
                 if 'quota' in raw.lower():
                     raise RuntimeError('QUOTA_EXCEEDED')
                 if attempt < 2:
-                    _time.sleep(15 * (attempt + 1))
+                    _time.sleep(20 * (attempt + 1))
                     continue
                 raise RuntimeError('RATE_LIMITED')
+            if e.code == 503 and attempt < 2:
+                _time.sleep(8)
+                continue
             detail = e.read().decode('utf-8', errors='replace')[:300]
             last_err = RuntimeError(f'Gemini API 錯誤 {e.code}：{detail}')
         except TimeoutError:
@@ -2208,10 +2211,12 @@ class App(tk.Tk):
                                   relief='groove', bd=2)
         gem_frame.pack(fill='x', padx=20, pady=(8, 4))
 
+        _dlimit = _load_settings().get('gemini_daily_limit', '')
+        _limit_str = f'每天免費約 {_dlimit} 次，' if _dlimit else '每天免費使用，'
         tk.Label(gem_frame, text=(
             '申請：aistudio.google.com → 登入 Google 帳號 → 左側「Get API key」\n'
-            '→「建立 API 金鑰」→ 點「Copy key」複製後貼入下方欄位。\n'
-            '每天免費 1500 次，無需信用卡。'
+            f'→「建立 API 金鑰」→ 點「Copy key」複製後貼入下方欄位。\n'
+            f'{_limit_str}無需信用卡。'
         ), bg=WHITE, fg=TEXT, font=(FONT, 9), justify='left').pack(padx=10, pady=(4, 2), anchor='w')
 
         gef = tk.Frame(gem_frame, bg=WHITE)
@@ -2358,11 +2363,13 @@ class App(tk.Tk):
                 msg = str(e)
                 if msg == 'QUOTA_EXCEEDED':
                     prog.close()
+                    _limit = _load_settings().get('gemini_daily_limit')
+                    limit_hint = f'（免費版每天約 {_limit} 次）' if _limit else ''
                     messagebox.showwarning(
                         'Gemini 免費額度已用完',
-                        'Google Gemini 今日免費辨識額度已耗盡。\n\n'
-                        '免費版每天約 500 次，額度於每日台灣時間早上 8:00 重置。\n\n'
-                        '請明天再試，或至 aistudio.google.com 查看用量。',
+                        f'Google Gemini 今日免費辨識額度已耗盡。{limit_hint}\n\n'
+                        f'額度每日台灣時間早上 8:00 重置。\n\n'
+                        f'請明天再試，或至 aistudio.google.com 查看用量。',
                         parent=self)
                     self.status_var.set('今日 Gemini 額度已用完')
                     self._update_quota_lbl()
@@ -2416,10 +2423,10 @@ class App(tk.Tk):
                 prog.mark_done(fname, ok=False)
                 continue
 
-            # Small delay between images to respect Gemini's 15 RPM rate limit
+            # Delay between images to stay safely under Gemini's per-minute limit
             if i < total - 1:
                 import time as _time
-                _time.sleep(4)
+                _time.sleep(5)
 
             order_id  = (ocr.get('order_id')  or '').strip()
             real_name = (ocr.get('real_name') or '').strip()

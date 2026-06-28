@@ -1,11 +1,13 @@
 {
-  "version": "1.1.2",
+  "version": "1.1.3",
   "date": "2026-06-28",
   "gemini_model": "gemini-2.5-flash-lite",
-  "gemini_daily_limit": 1500,
+  "gemini_daily_limit": 500,
   "changelog": [
-    "版本號改為可點擊：點一下即可立即檢查更新，不需關掉重開程式",
-    "修復額度顯示：今日辨識剩餘張數現在正確顯示"
+    "修復額度顯示矛盾：錯誤訊息、設定介面、工具列現在都從同一個來源顯示上限",
+    "新增 503 過載錯誤自動重試",
+    "每張圖片間隔調整為 5 秒，降低觸發速率限制的機率",
+    "版本號可點擊立即手動檢查更新"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
   "announcement": ""
