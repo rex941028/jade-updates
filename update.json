@@ -1,11 +1,13 @@
 {
-  "version": "1.0.9",
+  "version": "1.1.0",
   "date": "2026-06-28",
   "gemini_model": "gemini-2.5-flash-lite",
+  "gemini_daily_limit": 1500,
   "changelog": [
-    "修復圖片辨識持續 429 錯誤：切換至 gemini-2.5-flash-lite 模型",
-    "gemini-2.0-flash 對新格式 API 金鑰（AQ. 開頭）的免費額度為 0，改用 gemini-2.5-flash-lite"
+    "工具列新增「今日辨識剩餘 X 張」即時顯示",
+    "剩餘不足 50 張時顯示黃色警示，用完時顯示紅色",
+    "每日午夜自動重置計數，無需手動操作"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
-  "announcement": "【系統更新 v1.0.9】修復圖片辨識 429 錯誤！\n\n已切換至 gemini-2.5-flash-lite 模型，更新後即可正常辨識圖片，請重新開啟程式套用更新。"
+  "announcement": ""
 }

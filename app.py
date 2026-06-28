@@ -1,4 +1,5 @@
 import base64
+import datetime
 import json
 import os
 import re
@@ -21,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.1.0"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -382,6 +383,25 @@ def _save_settings(s: dict):
         json.dump(s, f, ensure_ascii=False, indent=2)
 
 
+def _get_ocr_today_count() -> int:
+    today = datetime.date.today().isoformat()
+    usage = _load_settings().get('gemini_daily_usage', {})
+    if usage.get('date') != today:
+        return 0
+    return int(usage.get('count', 0))
+
+
+def _increment_ocr_count():
+    s = _load_settings()
+    today = datetime.date.today().isoformat()
+    usage = s.get('gemini_daily_usage', {})
+    if usage.get('date') != today:
+        usage = {'date': today, 'count': 0}
+    usage['count'] = int(usage.get('count', 0)) + 1
+    s['gemini_daily_usage'] = usage
+    _save_settings(s)
+
+
 def _get_api_auth():
     """Return (api_type, credential) or None.
     api_type: 'gemini' | 'anthropic' | 'anthropic-oauth'
@@ -486,6 +506,7 @@ def _ocr_with_gemini(b64: str, mime: str, key: str) -> dict:
         raise last_err
     text = ((body.get('candidates') or [{}])[0]
             .get('content', {}).get('parts', [{}])[0].get('text', '')).strip()
+    _increment_ocr_count()
     return _parse_ocr_json(text)
 
 
@@ -1196,6 +1217,10 @@ class App(tk.Tk):
         self._btn(bar, '↑ 匯入圖片', '#7B3F9E', self._import_images).pack(side='right', padx=4)
         self._btn(bar, '⚙ API 設定',  '#888888', self._show_api_key_dialog,
                   small=True).pack(side='right', padx=(0, 2))
+        self._quota_lbl = tk.Label(bar, text='', bg='#EAF4EE', fg='#888888',
+                                   font=(FONT, 8), cursor='arrow')
+        self._quota_lbl.pack(side='right', padx=(0, 6))
+        self._update_quota_lbl()
 
     def _build_pane(self):
         pw = ttk.PanedWindow(self, orient='horizontal')
@@ -2259,6 +2284,17 @@ class App(tk.Tk):
         dlg.wait_window()
         return saved[0]
 
+    def _update_quota_lbl(self):
+        count = _get_ocr_today_count()
+        s = _load_settings()
+        limit = s.get('gemini_daily_limit')
+        if limit:
+            remaining = max(0, int(limit) - count)
+            color = '#CC3333' if remaining == 0 else ('#B07000' if remaining < 50 else '#888888')
+            self._quota_lbl.config(text=f'今日辨識剩餘 {remaining} 張', fg=color)
+        else:
+            self._quota_lbl.config(text=f'今日已辨識 {count} 張', fg='#888888')
+
     def _ensure_api_key(self) -> bool:
         """Check auth availability; show setup dialog if missing. Returns True if ready."""
         if _get_api_auth() is not None:
@@ -2302,6 +2338,7 @@ class App(tk.Tk):
                         '請明天再試，或至 aistudio.google.com 查看用量。',
                         parent=self)
                     self.status_var.set('今日 Gemini 額度已用完')
+                    self._update_quota_lbl()
                     return
                 if msg == 'RATE_LIMITED':
                     prog.close()
@@ -2437,6 +2474,7 @@ class App(tk.Tk):
         else:
             messagebox.showinfo('圖片辨識完成', body, parent=self)
         self.status_var.set(f'圖片辨識：寫入 {written} 筆，失敗 {len(errors)} 張')
+        self._update_quota_lbl()
 
     def _show_ocr_review(self, pending: list) -> list | None:
         """Show an editable review table of OCR results.
