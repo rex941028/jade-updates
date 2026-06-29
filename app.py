@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.3"
+APP_VERSION = "1.1.4"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -164,8 +164,10 @@ def _parse_excel(filepath):
     for row in ws.iter_rows(min_row=2, values_only=True):
         oid  = gv(row, '訂單編號')
         acct = gv(row, '買家帳號')
-        if not oid or not acct:
+        if not oid:
             continue
+        if not acct:
+            acct = '__banned__'
 
         row_refund = gv(row, '退貨/退款狀態')
         item_price = gf(row, '商品原價')
@@ -254,7 +256,12 @@ def _write_to_db(order_map, price_acc, filename, skip_existing=False):
         acct = od['shopee_account']
 
         if not conn.execute('SELECT 1 FROM customers WHERE shopee_account=?', (acct,)).fetchone():
-            conn.execute('INSERT INTO customers (shopee_account) VALUES (?)', (acct,))
+            if acct == '__banned__':
+                conn.execute(
+                    'INSERT INTO customers (shopee_account, real_name) VALUES (?, ?)',
+                    (acct, '已停權帳戶'))
+            else:
+                conn.execute('INSERT INTO customers (shopee_account) VALUES (?)', (acct,))
             new_c += 1
 
         existing = conn.execute(
@@ -1384,9 +1391,10 @@ class App(tk.Tk):
         acct_row = tk.Frame(card, bg=WHITE)
         acct_row.pack(anchor='w', padx=16, pady=(0, 8))
         tk.Label(acct_row, text='蝦皮帳號：', bg=WHITE, fg=GRAY, font=(FONT, 9)).pack(side='left')
+        acct_display = '（已停權帳戶，多筆訂單匯總）' if acct == '__banned__' else acct
         _ae = tk.Entry(acct_row, font=(FONT, 9), relief='flat', fg=GRAY,
-                       readonlybackground=WHITE, bd=0, width=len(acct) + 2)
-        _ae.insert(0, acct)
+                       readonlybackground=WHITE, bd=0, width=len(acct_display) + 2)
+        _ae.insert(0, acct_display)
         _ae.config(state='readonly')
         _ae.pack(side='left')
 
@@ -1884,11 +1892,12 @@ class App(tk.Tk):
         self.tree.delete(*self.tree.get_children())
         for r in rows:
             acct  = r['shopee_account']
+            acct_display = '（已停權）' if acct == '__banned__' else acct
             name  = ('★ ' if (r['cnt'] >= 5 and r['sales_rev'] >= 10000) else '') + (r['real_name'] or '')
             spent = f"NT$ {r['rev']:,.0f}" if r['rev'] else '-'
             last  = (r['last_date'] or '')[:10]
             self.tree.insert('', 'end', iid=acct,
-                             values=(acct, name, r['line_account'] or '', r['cnt'], spent, last))
+                             values=(acct_display, name, r['line_account'] or '', r['cnt'], spent, last))
 
         # Date filter indicator
         if start_d or end_d:
