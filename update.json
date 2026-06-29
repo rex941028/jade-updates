@@ -1,10 +1,11 @@
 {
-  "version": "1.1.4",
+  "version": "1.1.5",
   "date": "2026-06-29",
   "gemini_model": "gemini-2.5-flash-lite",
   "gemini_daily_limit": 500,
   "changelog": [
-    "匯入報表時，買家帳號空白（帳號已停權）的訂單不再被略過，統一歸入「已停權帳戶」客戶"
+    "訂單表格：商品數量欄移至訂單成立日期後，訂單完成時間移至包裹查詢號碼後",
+    "新增商品分類統計長條圖（手鐲／平安扣／佛公），支援年月日粒度與金額／數量切換"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
   "announcement": ""

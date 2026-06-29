@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.1.5"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -990,6 +990,214 @@ class _ChartWindow(tk.Toplevel):
         self._canvas.delete('hover_overlay')
 
 
+# ── Product Category Bar Chart ────────────────────────────────────────────────
+
+class _ProductChartWindow(tk.Toplevel):
+    """商品分類長條圖：手鐲/平安扣/佛公 金額或數量，依年/月/日粒度顯示。"""
+
+    CATS = [
+        ('手鐲',  '#4B9FD5'),
+        ('平安扣', '#2D6A4F'),
+        ('佛公',  '#E07B3A'),
+    ]
+
+    def __init__(self, master, start_date=None, end_date=None):
+        super().__init__(master)
+        self.title('商品分類統計')
+        self.geometry('960x540')
+        self.minsize(640, 380)
+        self.configure(bg=WHITE)
+        self.transient(master)
+        self._start  = start_date
+        self._end    = end_date
+        self._gran   = tk.StringVar(value='月')
+        self._metric = tk.StringVar(value='金額')
+        self._chart_data = []
+        self._bar_rects  = []  # (x1,y1,x2,y2, cat_idx, period_idx)
+        self._build()
+        self.after(80, self._refresh)
+
+    def _build(self):
+        top = tk.Frame(self, bg=WHITE, pady=10)
+        top.pack(fill='x', padx=16)
+        tk.Label(top, text='商品分類統計', bg=WHITE, fg=JADE,
+                 font=(FONT, 13, 'bold')).pack(side='left')
+
+        right = tk.Frame(top, bg=WHITE)
+        right.pack(side='right')
+
+        tk.Label(right, text='時間粒度：', bg=WHITE, fg=TEXT,
+                 font=(FONT, 10)).pack(side='left')
+        for lbl in ('年', '月', '日'):
+            tk.Radiobutton(right, text=lbl, variable=self._gran, value=lbl,
+                           command=self._refresh, bg=WHITE, fg=TEXT,
+                           activebackground=JADE_MID, selectcolor=JADE_MID,
+                           font=(FONT, 10)).pack(side='left', padx=4)
+
+        tk.Label(right, text='  顯示：', bg=WHITE, fg=TEXT,
+                 font=(FONT, 10)).pack(side='left')
+        for lbl in ('金額', '數量'):
+            tk.Radiobutton(right, text=lbl, variable=self._metric, value=lbl,
+                           command=self._refresh, bg=WHITE, fg=TEXT,
+                           activebackground=JADE_MID, selectcolor=JADE_MID,
+                           font=(FONT, 10)).pack(side='left', padx=4)
+
+        if self._start or self._end:
+            tk.Label(right,
+                     text=f'  篩選：{self._start or "─"} ～ {self._end or "─"}',
+                     bg=WHITE, fg=GRAY, font=(FONT, 9)).pack(side='left', padx=(12, 0))
+
+        self._canvas = tk.Canvas(self, bg='#FAFFFE', highlightthickness=0)
+        self._canvas.pack(fill='both', expand=True, padx=12, pady=(0, 12))
+        self._canvas.bind('<Configure>', lambda _: self._refresh())
+        self._canvas.bind('<Motion>',    self._on_hover)
+        self._canvas.bind('<Leave>',     self._on_leave)
+
+    def _refresh(self):
+        gran   = self._gran.get()
+        fmt    = {'年': '%Y', '月': '%Y-%m', '日': '%Y-%m-%d'}[gran]
+        where  = "WHERE order_status != '不成立'"
+        params = []
+        if self._start:
+            where += ' AND order_date >= ?'; params.append(self._start)
+        if self._end:
+            where += ' AND order_date <= ?'; params.append(self._end + ' 23:59:59')
+
+        conn = get_db()
+        rows = conn.execute(f'''
+            SELECT strftime('{fmt}', order_date) period,
+                COALESCE(SUM(CASE WHEN product_name LIKE '%手鐲%'  THEN original_price ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN product_name LIKE '%平安扣%' THEN original_price ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN product_name LIKE '%佛公%'  THEN original_price ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN product_name LIKE '%手鐲%'  THEN quantity ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN product_name LIKE '%平安扣%' THEN quantity ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN product_name LIKE '%佛公%'  THEN quantity ELSE 0 END),0)
+            FROM orders {where}
+            GROUP BY period ORDER BY period
+        ''', params).fetchall()
+        conn.close()
+
+        self._chart_data = [
+            {'period': r[0],
+             'amt': [float(r[1]), float(r[2]), float(r[3])],
+             'qty': [int(r[4]),   int(r[5]),   int(r[6])]}
+            for r in rows if r[0]
+        ]
+        self._draw()
+
+    def _draw(self):
+        c = self._canvas
+        c.delete('all')
+        self._bar_rects = []
+        W = c.winfo_width()
+        H = c.winfo_height()
+        if W < 80 or H < 80:
+            return
+
+        data   = self._chart_data
+        metric = self._metric.get()
+
+        if not data:
+            c.create_text(W // 2, H // 2, text='此時段無資料',
+                          font=(FONT, 14), fill=GRAY)
+            return
+
+        ML, MR, MT, MB = 96, 120, 48, 60
+        n = len(data)
+
+        vals = [[d['amt'][i] if metric == '金額' else d['qty'][i]
+                 for i in range(3)] for d in data]
+        max_v = max((v for row in vals for v in row), default=0) or 1
+        max_v *= 1.14
+
+        slot_w   = (W - ML - MR) / n
+        side_pad = max(3, slot_w * 0.07)
+        bar_gap  = max(2, slot_w * 0.04)
+        bar_w    = max(4, (slot_w - 2 * side_pad - 2 * bar_gap) / 3)
+
+        def by(v):
+            return MT + (1 - v / max_v) * (H - MT - MB)
+
+        # Grid + Y labels
+        for i in range(5):
+            frac = i / 4
+            y = MT + frac * (H - MT - MB)
+            v = max_v * (1 - frac)
+            c.create_line(ML, y, W - MR, y, fill='#EBEBEB', dash=(4, 3))
+            lbl = (f'NT${v:,.0f}' if metric == '金額' else f'{int(v):,}')
+            c.create_text(ML - 6, y, text=lbl, anchor='e',
+                          font=(FONT, 8), fill='#999')
+
+        # Axes
+        c.create_line(ML, MT, ML, H - MB, fill='#CCCCCC', width=1)
+        c.create_line(ML, H - MB, W - MR, H - MB, fill='#CCCCCC', width=1)
+
+        step = max(1, n // 14)
+        for pi, (d, row_vals) in enumerate(zip(data, vals)):
+            slot_x = ML + pi * slot_w
+            cx     = slot_x + slot_w / 2
+
+            for ci, (v, (cat, color)) in enumerate(zip(row_vals, self.CATS)):
+                x1 = slot_x + side_pad + ci * (bar_w + bar_gap)
+                x2 = x1 + bar_w
+                y1 = by(v)
+                y2 = H - MB
+                if y1 < y2:  # skip zero-height bars
+                    c.create_rectangle(x1, y1, x2, y2,
+                                       fill=color, outline='', tags='bar')
+                self._bar_rects.append((x1, y1, x2, y2, ci, pi))
+
+            if n == 1 or pi == 0 or pi == n - 1 or pi % step == 0:
+                c.create_text(cx, H - MB + 14, text=d['period'],
+                              font=(FONT, 8), fill='#999', anchor='n')
+
+        # Legend
+        lx = W - MR + 10
+        leg_h = len(self.CATS) * 24 + 16
+        c.create_rectangle(lx, MT, W - 6, MT + leg_h,
+                           fill=WHITE, outline='#DDDDDD')
+        for i, (cat, color) in enumerate(self.CATS):
+            ly = MT + 12 + i * 24
+            c.create_rectangle(lx + 8, ly - 6, lx + 24, ly + 6,
+                               fill=color, outline='')
+            c.create_text(lx + 30, ly, text=cat, anchor='w',
+                          font=(FONT, 9), fill=TEXT)
+
+    def _on_hover(self, e):
+        c = self._canvas
+        c.delete('hover_overlay')
+        metric = self._metric.get()
+        W = c.winfo_width()
+
+        for x1, y1, x2, y2, ci, pi in self._bar_rects:
+            if x1 <= e.x <= x2 and min(y1, y2) <= e.y <= max(y1, y2):
+                d    = self._chart_data[pi]
+                cat, color = self.CATS[ci]
+                v    = d['amt'][ci] if metric == '金額' else d['qty'][ci]
+
+                tip_w, tip_h = 170, 60
+                tx   = e.x + 12 if e.x < W - 185 else e.x - tip_w - 12
+                ty_b = max(4, e.y - tip_h - 6)
+
+                c.create_rectangle(tx, ty_b, tx + tip_w, ty_b + tip_h,
+                                   fill='#FFFDE7', outline='#CCCCCC',
+                                   tags='hover_overlay')
+                c.create_text(tx + 8, ty_b + 10,
+                              text=f'{d["period"]}  {cat}', anchor='nw',
+                              font=(FONT, 9, 'bold'), fill=color,
+                              tags='hover_overlay')
+                val_txt = (f'NT$ {v:,.0f}' if metric == '金額'
+                           else f'{v:,} 件')
+                c.create_text(tx + 8, ty_b + 30,
+                              text=val_txt, anchor='nw',
+                              font=(FONT, 12, 'bold'), fill=TEXT,
+                              tags='hover_overlay')
+                break
+
+    def _on_leave(self, _e):
+        self._canvas.delete('hover_overlay')
+
+
 # ── Date Range Picker ─────────────────────────────────────────────────────────
 
 class _DateRangePicker(tk.Toplevel):
@@ -1236,6 +1444,8 @@ class App(tk.Tk):
         self._btn(bar, '↑ 匯入圖片', '#7B3F9E', self._import_images).pack(side='right', padx=4)
         self._btn(bar, '⚙ API 設定',  '#888888', self._show_api_key_dialog,
                   small=True).pack(side='right', padx=(0, 2))
+        self._btn(bar, '商品統計', '#B07000', self._open_product_chart,
+                  small=True).pack(side='right', padx=(0, 4))
         self._quota_lbl = tk.Label(bar, text='', bg='#EAF4EE', fg='#888888',
                                    font=(FONT, 8), cursor='arrow')
         self._quota_lbl.pack(side='right', padx=(0, 6))
@@ -1463,10 +1673,10 @@ class App(tk.Tk):
         oc = tk.Frame(self._df, bg=WHITE)
         oc.pack(fill='both', padx=12, pady=(0, 12))
 
-        ocols = ('oid', 'status', 'refund', 'order_date', 'complete_date',
+        ocols = ('oid', 'status', 'refund', 'order_date', 'qty',
                  'product', 'orig_price', 'net_income',
                  'coupon', 'payment', 'shipping', 'tracking',
-                 'city', 'district', 'note')
+                 'complete_date', 'city', 'district', 'note')
         ot = ttk.Treeview(oc, columns=ocols, show='headings',
                           height=min(max(len(os_), 4), 12))
         ohdrs = [
@@ -1474,7 +1684,7 @@ class App(tk.Tk):
             ('status',       '狀態',          72),
             ('refund',       '退貨退款',       80),
             ('order_date',   '訂單成立日期', 110),
-            ('complete_date','訂單完成時間', 110),
+            ('qty',          '商品數量',       70),
             ('product',      '商品名稱',     210),
             ('orig_price',   '商品原價',      95),
             ('net_income',   '進帳金額',      95),
@@ -1482,6 +1692,7 @@ class App(tk.Tk):
             ('payment',      '付款方式',       90),
             ('shipping',     '寄送方式',      110),
             ('tracking',     '包裹查詢號碼',  130),
+            ('complete_date','訂單完成時間', 110),
             ('city',         '城市',           72),
             ('district',     '行政區',         72),
             ('note',         '備註',          120),
@@ -1489,7 +1700,7 @@ class App(tk.Tk):
         for cid, text, w in ohdrs:
             ot.heading(cid, text=text)
             anchor = 'e' if cid in ('orig_price', 'net_income', 'coupon') else \
-                     ('center' if cid in ('status', 'refund') else 'w')
+                     ('center' if cid in ('status', 'refund', 'qty') else 'w')
             ot.column(cid, width=w, minwidth=40, anchor=anchor)
 
         ot.tag_configure('refunded',  foreground=RED)
@@ -1542,7 +1753,7 @@ class App(tk.Tk):
                 App._short_status(o['order_status']),
                 o['refund_status'] or '－',
                 (o['order_date'] or '')[:16],
-                (o['order_complete_time'] or '')[:16],
+                o['quantity'],
                 prod_cell,
                 orig_str,
                 net_str,
@@ -1550,6 +1761,7 @@ class App(tk.Tk):
                 o['payment_method'],
                 o['shipping_method'],
                 o['tracking_number'],
+                (o['order_complete_time'] or '')[:16],
                 o['city'],
                 o['district'],
                 note_text,
@@ -1977,6 +2189,11 @@ class App(tk.Tk):
         _ChartWindow(self,
                      start_date=self.start_date_var.get().strip() or None,
                      end_date=self.end_date_var.get().strip() or None)
+
+    def _open_product_chart(self):
+        _ProductChartWindow(self,
+                            start_date=self.start_date_var.get().strip() or None,
+                            end_date=self.end_date_var.get().strip() or None)
 
     def _import_excel(self):
         paths = filedialog.askopenfilenames(
