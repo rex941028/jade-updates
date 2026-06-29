@@ -1,12 +1,12 @@
 {
-  "version": "1.1.6",
+  "version": "1.1.7",
   "date": "2026-06-29",
   "gemini_model": "gemini-2.5-flash-lite",
   "gemini_daily_limit": 500,
   "changelog": [
     "蝦皮帳號欄位改為自動填滿寬度，帳號再長也能完整顯示",
     "左側列表「消費金額」欄位更名為「進帳金額」",
-    "更新系統視窗圖示"
+    "圖示嵌入程式，客戶端更新後自動套用"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
   "announcement": ""

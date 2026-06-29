@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.6"
+APP_VERSION = "1.1.7"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -40,6 +40,20 @@ GRAY       = '#6C757D'
 RED        = '#C0392B'
 BLUE       = '#1565C0'
 FONT       = 'Microsoft JhengHei'
+
+_APP_ICON_B64 = (
+    'iVBORw0KGgoAAAANSUhEUgAAABMAAAATCAYAAAByUDbMAAAACXBIWXMAAAsTAAALEwEAmpwYAAACGElE'
+    'QVQ4jXXUS6hOURgG4OdsPw4JuZ0BA8plQociYXdQjEhGbiMzonaUHANOShFKWoliohCRmTKVVs6QOEru'
+    '5DIgkVyP3zHYC///297Jt9f63vWub3/rXatNFYp8Ntan0Q+Mx02MTeOLQnzcuqytRWQcetCHM0L8kub3'
+    'CnGvIp+O51iXNjj2h9MkVuTT0I1jWI1JeJGyS3ANC9CLK3iGHdgvxA9/xcqKDmCrEL+nuZ1CPJS+D2IU'
+    'vghxe0MBw7EPu4TYn6XpHnT/ESoxPC1YileYjBepnyVC/Izj2AKZIp+DO0J819rQhLk4j1u4hLwpG+Ij'
+    'jFTkIzJswNkKkY8pXsAyTMPCNG7FeXRlqDeeSAPqKc7BEAxCOxb9wwzxISbWMFWRb6sQW6xo+qN2jFae'
+    'YhUGaugT4tF/UqXQCRSpqk8ps0iRd1aIjalpNW5z+d8U+X08wTi/vRbiiYrNt2ao/UdqWIovMRP92IiT'
+    'FUI11DO8V+QdFWJDU+zCd0ScxsoK7mL0ZUpbbK6srciXpwrvKv12G4MrmKvQmwnxNX4q8lkVpCl4i7WY'
+    'gTV41LLhKlwXYv33dTqIHYp8UgOtH6eUPRvAbszDgwahWZgvxMs0vxqjcETZl5s4rHw1ngrxXOJ0YKfy'
+    'dN+gE3uEWG8WK8mZ0lftqT9XhTjQkG9TXqlN6G21SLXHinwCVihfjq+J14YM93BDiP2ty34BOP6gTiNd'
+    'OV0AAAAASUVORK5CYIIPQ7zQJXaFuk8IOnkJds0wHYsKgB5Z/Wv0BPvnG5EzCg=='
+)
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -1340,7 +1354,7 @@ class App(tk.Tk):
         self.minsize(950, 620)
         self.configure(bg=BG)
         try:
-            _icon = tk.PhotoImage(file=r'C:\Users\starmoon\OneDrive\文件\小logo.png')
+            _icon = tk.PhotoImage(data=_APP_ICON_B64)
             self.iconphoto(True, _icon)
             self._icon_ref = _icon  # prevent garbage collection
         except Exception:
