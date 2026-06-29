@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.7"
+APP_VERSION = "1.1.8"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -811,64 +811,161 @@ class _Tooltip:
 
 # ── Chart Window ──────────────────────────────────────────────────────────────
 
-class _ChartWindow(tk.Toplevel):
+# ── Shared date-range base for all chart windows ─────────────────────────────
+
+class _BaseChartWindow(tk.Toplevel):
+    """Shared date-range + granularity controls for chart windows.
+
+    Subclasses must call _init_date_state() in __init__,
+    then _build_controls() in _build, and use _get_date_range() in _refresh.
+    """
+
+    _PRESETS  = ('1個月', '3個月', '6個月', '1年', '自訂', '全部')
+    # Default granularity when a preset is selected
+    _GRAN_FOR = {'1個月': '日', '3個月': '月', '6個月': '月',
+                 '1年': '月', '自訂': '月', '全部': '年'}
+
+    def _init_date_state(self, start_date, end_date):
+        """Initialize date-range state; call before _build."""
+        if start_date or end_date:
+            self._preset   = tk.StringVar(value='自訂')
+            self._custom_s = tk.StringVar(value=start_date or '')
+            self._custom_e = tk.StringVar(value=end_date   or '')
+            self._gran     = tk.StringVar(value='月')
+        else:
+            self._preset   = tk.StringVar(value='1年')
+            self._custom_s = tk.StringVar()
+            self._custom_e = tk.StringVar()
+            self._gran     = tk.StringVar(value='月')
+        self._custom_frame = None  # set by _build_controls
+
+    def _get_date_range(self):
+        """Return (start_str_or_None, end_str_or_None) for current preset."""
+        preset = self._preset.get()
+        today  = datetime.date.today()
+        if preset == '1個月':
+            return (today - datetime.timedelta(days=30)).isoformat(), today.isoformat()
+        if preset == '3個月':
+            return (today - datetime.timedelta(days=91)).isoformat(), today.isoformat()
+        if preset == '6個月':
+            return (today - datetime.timedelta(days=182)).isoformat(), today.isoformat()
+        if preset == '1年':
+            try:
+                s = today.replace(year=today.year - 1)
+            except ValueError:
+                s = today - datetime.timedelta(days=365)
+            return s.isoformat(), today.isoformat()
+        if preset == '自訂':
+            s = self._custom_s.get().strip().replace('/', '-')
+            e = self._custom_e.get().strip().replace('/', '-')
+            return s or None, e or None
+        return None, None  # 全部
+
+    def _on_preset_change(self):
+        preset = self._preset.get()
+        self._gran.set(self._GRAN_FOR.get(preset, '月'))
+        if self._custom_frame:
+            if preset == '自訂':
+                self._custom_frame.pack(fill='x', padx=16, pady=(0, 4))
+            else:
+                self._custom_frame.pack_forget()
+        self._refresh()
+
+    def _build_controls(self, container, extra_right_fn=None):
+        """Build the preset + granularity bar. extra_right_fn adds widgets to right side."""
+        ctrl = tk.Frame(container, bg='#EEF6F1', pady=5)
+        ctrl.pack(fill='x')
+
+        # Left: preset buttons
+        left = tk.Frame(ctrl, bg='#EEF6F1')
+        left.pack(side='left', padx=12)
+        tk.Label(left, text='時段：', bg='#EEF6F1', fg=GRAY,
+                 font=(FONT, 9)).pack(side='left')
+        for p in self._PRESETS:
+            tk.Radiobutton(left, text=p, variable=self._preset, value=p,
+                           command=self._on_preset_change,
+                           bg='#EEF6F1', fg=TEXT, font=(FONT, 9),
+                           activebackground=JADE_MID, selectcolor=JADE_MID,
+                           ).pack(side='left', padx=2)
+
+        # Right: optional extra widgets + granularity
+        right = tk.Frame(ctrl, bg='#EEF6F1')
+        right.pack(side='right', padx=12)
+        if extra_right_fn:
+            extra_right_fn(right)
+        tk.Label(right, text=' 粒度：', bg='#EEF6F1', fg=GRAY,
+                 font=(FONT, 9)).pack(side='left')
+        for g in ('年', '月', '日'):
+            tk.Radiobutton(right, text=g, variable=self._gran, value=g,
+                           command=self._refresh,
+                           bg='#EEF6F1', fg=TEXT, font=(FONT, 9),
+                           activebackground=JADE_MID, selectcolor=JADE_MID,
+                           ).pack(side='left', padx=2)
+
+        # Custom date input row (hidden unless preset=自訂)
+        cf = tk.Frame(container, bg='#D8F3E8', pady=4)
+        tk.Label(cf, text='  從', bg='#D8F3E8', fg=TEXT,
+                 font=(FONT, 9)).pack(side='left')
+        tk.Entry(cf, textvariable=self._custom_s, font=(FONT, 9),
+                 width=12, relief='solid', bd=1).pack(side='left', padx=(4, 0))
+        tk.Label(cf, text=' 到 ', bg='#D8F3E8', fg=TEXT,
+                 font=(FONT, 9)).pack(side='left')
+        tk.Entry(cf, textvariable=self._custom_e, font=(FONT, 9),
+                 width=12, relief='solid', bd=1).pack(side='left')
+        tk.Label(cf, text='  格式：YYYY-MM-DD', bg='#D8F3E8', fg='#888',
+                 font=(FONT, 8)).pack(side='left', padx=8)
+        tk.Button(cf, text='套用', font=(FONT, 9, 'bold'),
+                  bg=JADE, fg=WHITE, relief='flat', padx=12,
+                  activebackground=JADE_DARK, activeforeground=WHITE,
+                  command=self._refresh).pack(side='left')
+
+        self._custom_frame = cf
+        if self._preset.get() == '自訂':
+            cf.pack(fill='x', padx=16, pady=(0, 4))
+
+
+# ── Sales Line Chart ──────────────────────────────────────────────────────────
+
+class _ChartWindow(_BaseChartWindow):
     """折線統計圖：銷售總額 + 進帳總額，依年/月/日粒度顯示。"""
 
     def __init__(self, master, start_date=None, end_date=None):
         super().__init__(master)
         self.title('銷售統計折線圖')
-        self.geometry('900x520')
-        self.minsize(600, 360)
+        self.geometry('900x560')
+        self.minsize(640, 400)
         self.configure(bg=WHITE)
         self.transient(master)
-        self._start = start_date
-        self._end   = end_date
-        self._gran  = tk.StringVar(value='月')
+        self._init_date_state(start_date, end_date)
         self._chart_xs   = []
         self._chart_data = []
         self._build()
         self.after(80, self._refresh)
 
     def _build(self):
-        top = tk.Frame(self, bg=WHITE, pady=10)
-        top.pack(fill='x', padx=16)
-
-        tk.Label(top, text='銷售統計折線圖', bg=WHITE, fg=JADE,
+        hdr = tk.Frame(self, bg=WHITE, pady=10)
+        hdr.pack(fill='x', padx=16)
+        tk.Label(hdr, text='銷售統計折線圖', bg=WHITE, fg=JADE,
                  font=(FONT, 13, 'bold')).pack(side='left')
 
-        right = tk.Frame(top, bg=WHITE)
-        right.pack(side='right')
-        tk.Label(right, text='時間粒度：', bg=WHITE, fg=TEXT, font=(FONT, 10)).pack(side='left')
-        for label in ('年', '月', '日'):
-            rb = tk.Radiobutton(right, text=label, variable=self._gran, value=label,
-                                command=self._refresh, bg=WHITE, fg=TEXT,
-                                activebackground=JADE_MID, selectcolor=JADE_MID,
-                                font=(FONT, 10))
-            rb.pack(side='left', padx=4)
-
-        # Date range display
-        range_txt = ''
-        if self._start or self._end:
-            range_txt = f'  篩選：{self._start or "─"} ～ {self._end or "─"}'
-        if range_txt:
-            tk.Label(right, text=range_txt, bg=WHITE, fg=GRAY,
-                     font=(FONT, 9)).pack(side='left', padx=(12, 0))
+        self._build_controls(self)
 
         self._canvas = tk.Canvas(self, bg='#FAFFFE', highlightthickness=0)
-        self._canvas.pack(fill='both', expand=True, padx=12, pady=(0, 12))
+        self._canvas.pack(fill='both', expand=True, padx=12, pady=(4, 12))
         self._canvas.bind('<Configure>', lambda _: self._refresh())
-        self._canvas.bind('<Motion>',   self._on_hover)
-        self._canvas.bind('<Leave>',    self._on_leave)
+        self._canvas.bind('<Motion>',    self._on_hover)
+        self._canvas.bind('<Leave>',     self._on_leave)
 
     def _refresh(self):
-        gran   = self._gran.get()
-        fmt    = {'年': '%Y', '月': '%Y-%m', '日': '%Y-%m-%d'}[gran]
-        where  = "WHERE order_status != '不成立'"
+        start, end = self._get_date_range()
+        gran  = self._gran.get()
+        fmt   = {'年': '%Y', '月': '%Y-%m', '日': '%Y-%m-%d'}[gran]
+        where = "WHERE order_status != '不成立'"
         params = []
-        if self._start:
-            where += ' AND order_date >= ?'; params.append(self._start)
-        if self._end:
-            where += ' AND order_date <= ?'; params.append(self._end + ' 23:59:59')
+        if start:
+            where += ' AND order_date >= ?'; params.append(start)
+        if end:
+            where += ' AND order_date <= ?'; params.append(end + ' 23:59:59')
 
         conn = get_db()
         rows = conn.execute(f'''
@@ -877,8 +974,7 @@ class _ChartWindow(tk.Toplevel):
                                 THEN original_price ELSE 0 END), 0) sales,
                    COALESCE(SUM({_NET_SQL}), 0) income
             FROM orders {where}
-            GROUP BY period
-            ORDER BY period
+            GROUP BY period ORDER BY period
         ''', params).fetchall()
         conn.close()
 
@@ -922,7 +1018,6 @@ class _ChartWindow(tk.Toplevel):
         def ty(v):
             return MT + (max_v - v) / rng * (H - MT - MB)
 
-        # ── Grid & Y axis labels ─────────────────────────────────────────
         for i in range(5):
             frac = i / 4
             y = MT + frac * (H - MT - MB)
@@ -931,18 +1026,15 @@ class _ChartWindow(tk.Toplevel):
             c.create_text(ML - 8, y, text=f'NT${v:,.0f}',
                           anchor='e', font=(FONT, 8), fill='#999')
 
-        # ── Axes ─────────────────────────────────────────────────────────
         c.create_line(ML, MT, ML, H - MB, fill='#CCCCCC', width=1)
         c.create_line(ML, H - MB, W - MR, H - MB, fill='#CCCCCC', width=1)
 
-        # ── X axis labels ─────────────────────────────────────────────────
         step = max(1, n // 14)
         for i, (x, p) in enumerate(zip(xs, periods)):
             if i == 0 or i == n - 1 or i % step == 0:
                 c.create_text(x, H - MB + 14, text=p,
                               font=(FONT, 8), fill='#999', anchor='n')
 
-        # ── Draw line helper ──────────────────────────────────────────────
         def draw_series(values, color, tag):
             pts = [(xs[i], ty(values[i])) for i in range(n)]
             if n >= 2:
@@ -956,22 +1048,17 @@ class _ChartWindow(tk.Toplevel):
         draw_series(income, JADE, 'income')
         draw_series(sales,  BLUE, 'sales')
 
-        # ── Legend ───────────────────────────────────────────────────────
         lx = W - MR + 10
-        c.create_rectangle(lx, MT, W - 6, MT + 58,
-                           fill=WHITE, outline='#DDDDDD')
+        c.create_rectangle(lx, MT, W - 6, MT + 58, fill=WHITE, outline='#DDDDDD')
         for idx2, (col, lbl) in enumerate([(BLUE, '銷售總額'), (JADE, '進帳總額')]):
             ly = MT + 16 + idx2 * 24
-            c.create_line(lx + 8,  ly, lx + 28, ly, fill=col, width=2)
-            c.create_oval(lx + 15, ly - 3, lx + 21, ly + 3,
-                          fill=col, outline=WHITE)
-            c.create_text(lx + 34, ly, text=lbl, anchor='w',
-                          font=(FONT, 9), fill=TEXT)
+            c.create_line(lx + 8, ly, lx + 28, ly, fill=col, width=2)
+            c.create_oval(lx + 15, ly - 3, lx + 21, ly + 3, fill=col, outline=WHITE)
+            c.create_text(lx + 34, ly, text=lbl, anchor='w', font=(FONT, 9), fill=TEXT)
 
     def _on_hover(self, e):
         if not self._chart_xs or not self._chart_data:
             return
-        # Find nearest point by X
         dists = [abs(x - e.x) for x in self._chart_xs]
         idx   = dists.index(min(dists))
         x     = self._chart_xs[idx]
@@ -987,11 +1074,11 @@ class _ChartWindow(tk.Toplevel):
                       dash=(3, 3), tags='hover_overlay')
 
         tip_w, tip_h = 162, 62
-        tx = x + 10 if x < W - 185 else x - tip_w - 10
+        tx     = x + 10 if x < W - 185 else x - tip_w - 10
         ty_box = 50
         c.create_rectangle(tx, ty_box, tx + tip_w, ty_box + tip_h,
                            fill='#FFFDE7', outline='#CCCCCC', tags='hover_overlay')
-        c.create_text(tx + 8, ty_box + 8, text=d['period'], anchor='nw',
+        c.create_text(tx + 8, ty_box + 8,  text=d['period'], anchor='nw',
                       font=(FONT, 9, 'bold'), fill=TEXT, tags='hover_overlay')
         c.create_text(tx + 8, ty_box + 24,
                       text=f'銷售：NT${d["sales"]:,.0f}', anchor='nw',
@@ -1006,7 +1093,7 @@ class _ChartWindow(tk.Toplevel):
 
 # ── Product Category Bar Chart ────────────────────────────────────────────────
 
-class _ProductChartWindow(tk.Toplevel):
+class _ProductChartWindow(_BaseChartWindow):
     """商品分類長條圖：手鐲/平安扣/佛公 金額或數量，依年/月/日粒度顯示。"""
 
     CATS = [
@@ -1018,64 +1105,50 @@ class _ProductChartWindow(tk.Toplevel):
     def __init__(self, master, start_date=None, end_date=None):
         super().__init__(master)
         self.title('商品分類統計')
-        self.geometry('960x540')
-        self.minsize(640, 380)
+        self.geometry('980x580')
+        self.minsize(680, 420)
         self.configure(bg=WHITE)
         self.transient(master)
-        self._start  = start_date
-        self._end    = end_date
-        self._gran   = tk.StringVar(value='月')
-        self._metric = tk.StringVar(value='金額')
+        self._init_date_state(start_date, end_date)
+        self._metric     = tk.StringVar(value='金額')
         self._chart_data = []
-        self._bar_rects  = []  # (x1,y1,x2,y2, cat_idx, period_idx)
+        self._bar_rects  = []
         self._build()
         self.after(80, self._refresh)
 
     def _build(self):
-        top = tk.Frame(self, bg=WHITE, pady=10)
-        top.pack(fill='x', padx=16)
-        tk.Label(top, text='商品分類統計', bg=WHITE, fg=JADE,
+        hdr = tk.Frame(self, bg=WHITE, pady=10)
+        hdr.pack(fill='x', padx=16)
+        tk.Label(hdr, text='商品分類統計', bg=WHITE, fg=JADE,
                  font=(FONT, 13, 'bold')).pack(side='left')
 
-        right = tk.Frame(top, bg=WHITE)
-        right.pack(side='right')
+        def metric_widgets(parent):
+            tk.Label(parent, text='顯示：', bg='#EEF6F1', fg=GRAY,
+                     font=(FONT, 9)).pack(side='left')
+            for lbl in ('金額', '數量'):
+                tk.Radiobutton(parent, text=lbl, variable=self._metric, value=lbl,
+                               command=self._refresh, bg='#EEF6F1', fg=TEXT,
+                               font=(FONT, 9), activebackground=JADE_MID,
+                               selectcolor=JADE_MID).pack(side='left', padx=2)
 
-        tk.Label(right, text='時間粒度：', bg=WHITE, fg=TEXT,
-                 font=(FONT, 10)).pack(side='left')
-        for lbl in ('年', '月', '日'):
-            tk.Radiobutton(right, text=lbl, variable=self._gran, value=lbl,
-                           command=self._refresh, bg=WHITE, fg=TEXT,
-                           activebackground=JADE_MID, selectcolor=JADE_MID,
-                           font=(FONT, 10)).pack(side='left', padx=4)
-
-        tk.Label(right, text='  顯示：', bg=WHITE, fg=TEXT,
-                 font=(FONT, 10)).pack(side='left')
-        for lbl in ('金額', '數量'):
-            tk.Radiobutton(right, text=lbl, variable=self._metric, value=lbl,
-                           command=self._refresh, bg=WHITE, fg=TEXT,
-                           activebackground=JADE_MID, selectcolor=JADE_MID,
-                           font=(FONT, 10)).pack(side='left', padx=4)
-
-        if self._start or self._end:
-            tk.Label(right,
-                     text=f'  篩選：{self._start or "─"} ～ {self._end or "─"}',
-                     bg=WHITE, fg=GRAY, font=(FONT, 9)).pack(side='left', padx=(12, 0))
+        self._build_controls(self, extra_right_fn=metric_widgets)
 
         self._canvas = tk.Canvas(self, bg='#FAFFFE', highlightthickness=0)
-        self._canvas.pack(fill='both', expand=True, padx=12, pady=(0, 12))
+        self._canvas.pack(fill='both', expand=True, padx=12, pady=(4, 12))
         self._canvas.bind('<Configure>', lambda _: self._refresh())
         self._canvas.bind('<Motion>',    self._on_hover)
         self._canvas.bind('<Leave>',     self._on_leave)
 
     def _refresh(self):
-        gran   = self._gran.get()
-        fmt    = {'年': '%Y', '月': '%Y-%m', '日': '%Y-%m-%d'}[gran]
-        where  = "WHERE order_status != '不成立'"
+        start, end = self._get_date_range()
+        gran  = self._gran.get()
+        fmt   = {'年': '%Y', '月': '%Y-%m', '日': '%Y-%m-%d'}[gran]
+        where = "WHERE order_status != '不成立'"
         params = []
-        if self._start:
-            where += ' AND order_date >= ?'; params.append(self._start)
-        if self._end:
-            where += ' AND order_date <= ?'; params.append(self._end + ' 23:59:59')
+        if start:
+            where += ' AND order_date >= ?'; params.append(start)
+        if end:
+            where += ' AND order_date <= ?'; params.append(end + ' 23:59:59')
 
         conn = get_db()
         rows = conn.execute(f'''
