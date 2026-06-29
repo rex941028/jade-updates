@@ -1,11 +1,12 @@
 {
-  "version": "1.1.5",
+  "version": "1.1.6",
   "date": "2026-06-29",
   "gemini_model": "gemini-2.5-flash-lite",
   "gemini_daily_limit": 500,
   "changelog": [
-    "訂單表格：商品數量欄移至訂單成立日期後，訂單完成時間移至包裹查詢號碼後",
-    "新增商品分類統計長條圖（手鐲／平安扣／佛公），支援年月日粒度與金額／數量切換"
+    "蝦皮帳號欄位改為自動填滿寬度，帳號再長也能完整顯示",
+    "左側列表「消費金額」欄位更名為「進帳金額」",
+    "更新系統視窗圖示"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",
   "announcement": ""

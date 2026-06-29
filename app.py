@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.1.6"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -1326,7 +1326,7 @@ _HDR_TEXTS = {
     'name':  '姓名',
     'line':  'LINE',
     'cnt':   '訂單',
-    'spent': '消費金額',
+    'spent': '進帳金額',
     'last':  '最近訂購',
 }
 
@@ -1339,6 +1339,12 @@ class App(tk.Tk):
         self.geometry('1300x760')
         self.minsize(950, 620)
         self.configure(bg=BG)
+        try:
+            _icon = tk.PhotoImage(file=r'C:\Users\starmoon\OneDrive\文件\小logo.png')
+            self.iconphoto(True, _icon)
+            self._icon_ref = _icon  # prevent garbage collection
+        except Exception:
+            pass
         self._current    = None
         self._field_vars = {}
         self._pref_text  = None
@@ -1422,7 +1428,7 @@ class App(tk.Tk):
         tk.Label(bar, text='排序：', bg='#EAF4EE', font=(FONT, 10)).pack(side='left', padx=(8, 2))
         self.sort_var = tk.StringVar(value='最近訂購')
         cb = ttk.Combobox(bar, textvariable=self.sort_var, state='readonly', width=8,
-                          values=['最近訂購', '消費金額', '訂單數量', '姓名'])
+                          values=['最近訂購', '進帳金額', '訂單數量', '姓名'])
         cb.pack(side='left', padx=4)
         cb.bind('<<ComboboxSelected>>', self._on_sort_combo)
 
@@ -1465,7 +1471,7 @@ class App(tk.Tk):
         cols = ('acct', 'name', 'line', 'cnt', 'spent', 'last')
         self.tree = ttk.Treeview(parent, columns=cols, show='headings', selectmode='browse')
         hdrs = [('acct','蝦皮帳號',130), ('name','姓名',95), ('line','LINE',95),
-                ('cnt','訂單',52), ('spent','消費金額',105), ('last','最近訂購',95)]
+                ('cnt','訂單',52), ('spent','進帳金額',105), ('last','最近訂購',95)]
         for cid, text, w in hdrs:
             self.tree.heading(cid, text=text, command=lambda c=cid: self._sort_by(c))
             anchor = 'e' if cid == 'spent' else ('center' if cid == 'cnt' else 'w')
@@ -1599,14 +1605,14 @@ class App(tk.Tk):
                  font=(FONT, 14, 'bold')).pack(anchor='w', padx=16, pady=(12, 0))
 
         acct_row = tk.Frame(card, bg=WHITE)
-        acct_row.pack(anchor='w', padx=16, pady=(0, 8))
+        acct_row.pack(anchor='w', padx=16, pady=(0, 8), fill='x')
         tk.Label(acct_row, text='蝦皮帳號：', bg=WHITE, fg=GRAY, font=(FONT, 9)).pack(side='left')
         acct_display = '（已停權帳戶，多筆訂單匯總）' if acct == '__banned__' else acct
         _ae = tk.Entry(acct_row, font=(FONT, 9), relief='flat', fg=GRAY,
-                       readonlybackground=WHITE, bd=0, width=len(acct_display) + 2)
+                       readonlybackground=WHITE, bd=0)
         _ae.insert(0, acct_display)
         _ae.config(state='readonly')
-        _ae.pack(side='left')
+        _ae.pack(side='left', fill='x', expand=True)
 
         strip = tk.Frame(card, bg=JADE_MID)
         strip.pack(fill='x', padx=16, pady=(0, 10), ipady=7)
@@ -2029,7 +2035,7 @@ class App(tk.Tk):
         else:
             sort = {
                 '最近訂購': 'ORDER BY last_date DESC',
-                '消費金額': 'ORDER BY rev DESC',
+                '進帳金額': 'ORDER BY rev DESC',
                 '訂單數量': 'ORDER BY cnt DESC',
                 '姓名':    ('ORDER BY CASE WHEN c.real_name="" OR c.real_name IS NULL '
                             'THEN 1 ELSE 0 END, c.real_name'),
