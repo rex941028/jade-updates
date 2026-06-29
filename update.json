@@ -1,12 +1,12 @@
 {
-  "version": "1.1.8",
+  "version": "1.1.9",
   "date": "2026-06-29",
   "gemini_model": "gemini-2.5-flash-lite",
   "gemini_daily_limit": 500,
   "changelog": [
     "統計圖表新增時段快速選擇（1個月/3個月/6個月/1年/自訂/全部），預設近1年",
     "時段切換時自動調整時間粒度（短期→日、中期→月、全部→年）",
-    "自訂模式支援手動輸入開始/結束日期（YYYY-MM-DD）後按套用重新載入",
+    "自訂模式改為日曆選擇，確認後自動刷新圖表",
     "大幅提升大資料量下的圖表效能，不再因資料龐大而卡頓"
   ],
   "app_url": "https://raw.githubusercontent.com/rex941028/jade-updates/main/app.py",

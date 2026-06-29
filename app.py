@@ -22,7 +22,7 @@ DB_PATH  = os.path.join(BASE_DIR, 'data', 'customers.db')
 
 # ── 版本與自動更新 ─────────────────────────────────────────────────────────────
 # 每次推送更新時，同步修改此版本號。
-APP_VERSION = "1.1.8"
+APP_VERSION = "1.1.9"
 
 # 將此 URL 設為你 GitHub 上 update.json 的 Raw 連結。
 # 範例：https://raw.githubusercontent.com/你的帳號/jade-updates/main/update.json
@@ -902,22 +902,33 @@ class _BaseChartWindow(tk.Toplevel):
                            activebackground=JADE_MID, selectcolor=JADE_MID,
                            ).pack(side='left', padx=2)
 
-        # Custom date input row (hidden unless preset=自訂)
-        cf = tk.Frame(container, bg='#D8F3E8', pady=4)
-        tk.Label(cf, text='  從', bg='#D8F3E8', fg=TEXT,
-                 font=(FONT, 9)).pack(side='left')
-        tk.Entry(cf, textvariable=self._custom_s, font=(FONT, 9),
-                 width=12, relief='solid', bd=1).pack(side='left', padx=(4, 0))
-        tk.Label(cf, text=' 到 ', bg='#D8F3E8', fg=TEXT,
-                 font=(FONT, 9)).pack(side='left')
-        tk.Entry(cf, textvariable=self._custom_e, font=(FONT, 9),
-                 width=12, relief='solid', bd=1).pack(side='left')
-        tk.Label(cf, text='  格式：YYYY-MM-DD', bg='#D8F3E8', fg='#888',
-                 font=(FONT, 8)).pack(side='left', padx=8)
-        tk.Button(cf, text='套用', font=(FONT, 9, 'bold'),
-                  bg=JADE, fg=WHITE, relief='flat', padx=12,
+        # Custom date row: shows selected range + calendar button (hidden unless preset=自訂)
+        cf = tk.Frame(container, bg='#D8F3E8', pady=6)
+
+        self._range_lbl = tk.Label(cf, text='尚未選擇', bg='#D8F3E8', fg=JADE,
+                                   font=(FONT, 10, 'bold'))
+        self._range_lbl.pack(side='left', padx=(16, 14))
+
+        def _open_picker():
+            _DateRangePicker(self, self._custom_s, self._custom_e)
+
+        tk.Button(cf, text='日曆選擇日期', font=(FONT, 9, 'bold'),
+                  bg=JADE, fg=WHITE, relief='flat', padx=12, pady=2,
                   activebackground=JADE_DARK, activeforeground=WHITE,
-                  command=self._refresh).pack(side='left')
+                  cursor='hand2', command=_open_picker).pack(side='left')
+
+        def _on_date_change(*_):
+            s = self._custom_s.get()
+            e = self._custom_e.get()
+            if hasattr(self, '_range_lbl'):
+                self._range_lbl.config(
+                    text=f'{s or "─"} ～ {e or "─"}' if (s or e) else '尚未選擇')
+            if self._preset.get() == '自訂' and s and e:
+                self._refresh()
+
+        self._custom_s.trace_add('write', _on_date_change)
+        self._custom_e.trace_add('write', _on_date_change)
+        _on_date_change()  # init label
 
         self._custom_frame = cf
         if self._preset.get() == '自訂':
